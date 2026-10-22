@@ -139,7 +139,7 @@ Function hooks are an early-access Claude Code feature (2.1.274+), so the
 opt-in flag must be set wherever Claude Code runs, e.g. in `~/.claude/settings.json`:
 
 ```json
-{ "env": { "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1", "TYPESAFE_API_KEY": "<your key>" } }
+{ "env": { "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1" } }
 ```
 
 Then add this repository as a plugin marketplace and install the plugin,
@@ -150,10 +150,10 @@ claude plugin marketplace add tamaratran/fast-jev-compaction
 claude plugin install fast-jev-compaction@fast-jev-compaction
 ```
 
-The install prompts for the plugin options (API key, thresholds, `truncateHeadChars`,
-…); leave them at their defaults to use `TYPESAFE_API_KEY` from the environment.
+The install prompts for the plugin options (thresholds, `truncateHeadChars`, scoring `model`,
+…); the defaults work as is. The plugin scores with a `claude-haiku-5-5` subagent and needs no TypeSafe key.
 Restart Claude Code or run `/reload-plugins`. From then on `/compact` (and
-auto-compaction) goes through Jev: the toast reads
+auto-compaction) goes through the Haiku scorer: the toast reads
 `fast-jev-compaction: kept N/M messages, no summary (…)` when the pruned history
 replaced the built-in summary, or `fallback to built-in summary (…)` when Jev
 could not remove enough (short sessions, or when it fails).

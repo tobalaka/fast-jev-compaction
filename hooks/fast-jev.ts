@@ -9,7 +9,11 @@ import type {
 } from 'claude-code';
 
 import { compact, reductionRatio, resolveOptions } from '../src/compact.js';
-import { buildJevRequest, DEFAULT_MODEL, parseJevResponse } from '../src/request.js';
+import {
+  buildSubagentPrompt,
+  DEFAULT_SUBAGENT_MODEL,
+  parseSubagentResponse,
+} from '../src/request.js';
 import type {
   CompactOptions,
   CompactResult,
@@ -22,26 +26,13 @@ import type {
 const HOOK_DEFAULTS = {
   compactAtPercent: 60,
   minReductionRatio: 0.25,
-  model: DEFAULT_MODEL,
+  model: DEFAULT_SUBAGENT_MODEL,
 };
 
-export type HookFetchInit = {
-  method?: string;
-  headers?: Record<string, string>;
-  body?: string;
-};
-
-export type HookFetchResponse = {
-  status: number;
-  ok: boolean;
-  text: string;
-};
-
-/** The shape of `$.http.fetch`, so the hook can be driven without an engine. */
-export type HookFetch = (url: string, init?: HookFetchInit) => Promise<HookFetchResponse>;
+/** Runs one Haiku subagent on `prompt` and resolves with its final answer. */
+export type HookAgent = (prompt: string, model: string) => Promise<string>;
 
 export type HookConfig = CompactOptions & {
-  apiKey?: string;
   compactAtPercent: number;
   minReductionRatio: number;
   model: string;
@@ -80,24 +71,17 @@ export function resolveHookConfig(options: PluginOptions): HookConfig {
     ),
     model: optionString(options, 'model') ?? HOOK_DEFAULTS.model,
   };
-  const apiKey = optionString(options, 'apiKey');
-  if (apiKey) config.apiKey = apiKey;
   const goal = optionString(options, 'goal');
   if (goal) config.goal = goal;
   return config;
 }
 
-/** A `JevAsker` over the engine's `$.http.fetch`. */
-export function jevAsker(fetchFn: HookFetch, apiKey: string, model: string): JevAsker {
+/** A `JevAsker` that has a Haiku subagent score the questions instead of calling Jev. */
+export function jevAsker(runAgent: HookAgent, model: string): JevAsker {
   return {
     async ask(state, questions) {
-      const request = buildJevRequest({ apiKey, model }, state, questions);
-      const response = await fetchFn(request.url, {
-        method: request.method,
-        headers: request.headers,
-        body: request.body,
-      });
-      return parseJevResponse(response.status, response.ok, response.text);
+      const reply = await runAgent(buildSubagentPrompt(state, questions), model);
+      return parseSubagentResponse(reply, questions);
     },
   };
 }
@@ -161,14 +145,13 @@ export type SessionCompaction = {
   messages: SessionMessage[];
 };
 
-/** Runs the library over a session transcript; throws when the key is missing or Jev fails. */
+/** Runs the library over a session transcript; throws when a subagent fails or answers badly. */
 export async function compactSession(
   messages: readonly SessionMessage[],
   config: HookConfig,
-  fetchFn: HookFetch,
+  runAgent: HookAgent,
 ): Promise<SessionCompaction> {
-  if (!config.apiKey) throw new Error('TYPESAFE_API_KEY is not configured');
-  const result = await compact(messages, jevAsker(fetchFn, config.apiKey, config.model), config);
+  const result = await compact(messages, jevAsker(runAgent, config.model), config);
   return { result, messages: toSessionMessages(messages, result.messages) };
 }
 
@@ -224,25 +207,6 @@ export function decisionLogLines(
   );
 }
 
-async function getApiKey(
-  $: {
-    env: { get: (name: string) => Promise<string | undefined> };
-    settings: { read: () => Promise<Readonly<Record<string, unknown>>> };
-  },
-  config: HookConfig,
-): Promise<string | undefined> {
-  if (config.apiKey) return config.apiKey;
-  const fromEnv = await $.env.get('TYPESAFE_API_KEY');
-  if (fromEnv) return fromEnv;
-  const settings = await $.settings.read();
-  const env = settings['env'];
-  if (env && typeof env === 'object') {
-    const value = (env as Record<string, unknown>)['TYPESAFE_API_KEY'];
-    if (typeof value === 'string' && value) return value;
-  }
-  return undefined;
-}
-
 function notify(
   $: {
     ui: {
@@ -259,13 +223,33 @@ function notify(
 export const register: Register = (on: On, options: PluginOptions) => {
   const configured = resolveHookConfig(options);
   let compacting = false;
+  // A subagent's answer arrives as its turn.complete; it may land before the
+  // spawn call resolves, so answers are kept until someone asks for them.
+  const answers = new Map<string, string>();
+  const waiting = new Map<string, (answer: string) => void>();
+  const failures = new Map<string, (error: Error) => void>();
+  let scoring = false;
 
   on('session.compact', async ($, event, next) => {
+    scoring = true;
     try {
-      const config = { ...configured, apiKey: await getApiKey($, configured) };
-      const { result, messages } = await compactSession(event.messages, config, async (url, init) => {
-        const response = await $.http.fetch(url, init);
-        return { status: response.status, ok: response.ok, text: response.text };
+      const config = configured;
+      const { result, messages } = await compactSession(event.messages, config, async (prompt, model) => {
+        const { agentId, deny } = await $.agent.spawn({
+          prompt,
+          model,
+          description: 'Score compaction questions',
+        });
+        if (deny !== undefined || !agentId) throw new Error(`subagent refused: ${deny ?? 'no id'}`);
+        const early = answers.get(agentId);
+        if (early !== undefined) {
+          answers.delete(agentId);
+          return early;
+        }
+        return new Promise<string>((resolve, reject) => {
+          waiting.set(agentId, resolve);
+          failures.set(agentId, reject);
+        });
       });
       for (const line of decisionLogLines(result)) $.ui.log(line);
       if (reductionRatio(result) < config.minReductionRatio) {
@@ -286,10 +270,24 @@ export const register: Register = (on: On, options: PluginOptions) => {
         `fallback to built-in summary (${error instanceof Error ? error.message : String(error)})`,
       );
       return next(event);
+    } finally {
+      scoring = false;
+      answers.clear();
     }
   });
 
   on('turn.complete', async ($, event: TurnCompleteInput, next) => {
+    if (event.agentId) {
+      const resolve = waiting.get(event.agentId);
+      const reject = failures.get(event.agentId);
+      if (resolve) {
+        waiting.delete(event.agentId);
+        failures.delete(event.agentId);
+        if (event.reason === 'answer') resolve(event.answer);
+        else reject?.(new Error(`subagent ended: ${event.reason}`));
+      } else if (scoring && event.reason === 'answer') answers.set(event.agentId, event.answer);
+      return next(event);
+    }
     if (compacting) return next(event);
     try {
       const { context } = await $.session.usage();

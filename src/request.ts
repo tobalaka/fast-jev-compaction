@@ -78,3 +78,50 @@ export function noulAnswer(
   }
   return answer.noul;
 }
+
+export const DEFAULT_SUBAGENT_MODEL = 'claude-haiku-5-5';
+
+/** The task for a subagent standing in for Jev: score every question from 0 to 1. */
+export function buildSubagentPrompt(state: JevState, questions: JevQuestions): string {
+  const items = Object.entries(questions).map(([name, q]) => `- ${name}: ${q.instructions}`);
+  return [
+    'You decide which parts of a coding-agent conversation must stay in its context.',
+    'Do not use any tools. Read the conversation state below, then give each statement a probability',
+    'between 0 and 1 that it is true (1 = certainly true, 0 = certainly false).',
+    'Tool results in the state are omitted on purpose; judge from the calls, their inputs and the surrounding text.',
+    '',
+    '<state>',
+    typeof state === 'string' ? state : JSON.stringify(state),
+    '</state>',
+    '',
+    'Statements:',
+    ...items,
+    '',
+    'Reply with one JSON object and nothing else, mapping every statement name to its probability,',
+    'for example {"call_t1": 0.9, "result_t1": 0.2}.',
+  ].join('\n');
+}
+
+/** Turns a subagent's reply into a Jev-shaped response; throws unless every question got a number in [0, 1]. */
+export function parseSubagentResponse(text: string, questions: JevQuestions): JevResponse {
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text.slice(start, end + 1));
+  } catch {
+    throw new Error('Subagent returned malformed JSON');
+  }
+  if (parsed === null || typeof parsed !== 'object') {
+    throw new Error('Subagent response is missing answers');
+  }
+  const answers: Record<string, JevAnswer> = {};
+  for (const name of Object.keys(questions)) {
+    const value = (parsed as Record<string, unknown>)[name];
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
+      throw new Error(`Invalid subagent answer for ${name}`);
+    }
+    answers[name] = { type: 'noul', noul: value };
+  }
+  return { answers };
+}

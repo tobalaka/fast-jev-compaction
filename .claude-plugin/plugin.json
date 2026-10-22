@@ -1,15 +1,9 @@
 {
   "name": "fast-jev-compaction",
   "version": "0.3.0",
-  "description": "Verbatim Jev-guided compaction for Claude Code sessions.",
+  "description": "Verbatim, Haiku-scored compaction for Claude Code sessions.",
   "license": "MIT",
   "userConfig": {
-    "apiKey": {
-      "type": "string",
-      "title": "TypeSafe API key",
-      "description": "TypeSafe API key. Leave unset to use TYPESAFE_API_KEY.",
-      "sensitive": true
-    },
     "keepThreshold": {
       "type": "number",
       "title": "Keep threshold",
@@ -54,9 +48,9 @@
     },
     "model": {
       "type": "string",
-      "title": "Jev model",
-      "description": "TypeSafe Jev model name.",
-      "default": "jev-latest"
+      "title": "Scoring model",
+      "description": "Model of the subagent that scores which tool calls and results to keep.",
+      "default": "claude-haiku-5-5"
     }
   }
 }
