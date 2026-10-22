@@ -79,7 +79,7 @@ export function noulAnswer(
   return answer.noul;
 }
 
-export const DEFAULT_SUBAGENT_MODEL = 'claude-haiku-5-5';
+export const DEFAULT_SUBAGENT_MODEL = 'haiku';
 
 /** The task for a subagent standing in for Jev: score every question from 0 to 1. */
 export function buildSubagentPrompt(state: JevState, questions: JevQuestions): string {

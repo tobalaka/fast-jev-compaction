@@ -151,7 +151,7 @@ claude plugin install fast-jev-compaction@fast-jev-compaction
 ```
 
 The install prompts for the plugin options (thresholds, `truncateHeadChars`, scoring `model`,
-…); the defaults work as is. The plugin scores with a `claude-haiku-5-5` subagent and needs no TypeSafe key.
+…); the defaults work as is. The plugin scores with a `haiku` subagent (Haiku 5.5) and needs no TypeSafe key.
 Restart Claude Code or run `/reload-plugins`. From then on `/compact` (and
 auto-compaction) goes through the Haiku scorer: the toast reads
 `fast-jev-compaction: kept N/M messages, no summary (…)` when the pruned history

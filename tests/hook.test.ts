@@ -52,7 +52,7 @@ ${JSON.stringify(Object.fromEntries(names.map((n) => [n, answer(n)])))}`;
 
 describe('hook config', () => {
   it('reads userConfig values and falls back to defaults', () => {
-    expect(resolveHookConfig({})).toEqual({ compactAtPercent: 60, minReductionRatio: 0.25, model: 'claude-haiku-5-5' });
+    expect(resolveHookConfig({})).toEqual({ compactAtPercent: 60, minReductionRatio: 0.25, model: 'haiku' });
     expect(
       resolveHookConfig({ keepThreshold: 0.3, maxStateTokens: 1000, model: 'haiku-x', goal: 'g', compactAtPercent: 'no' }),
     ).toEqual({

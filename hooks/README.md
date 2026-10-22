@@ -54,10 +54,10 @@ The plugin declares these `userConfig` values in
 | `maxStateTokens` | `25000` |
 | `maxRequestTokens` | `30000` |
 | `truncateHeadChars` | `300` |
-| `model` | `claude-haiku-5-5` |
+| `model` | `haiku` |
 
 The hook no longer calls the Jev API and needs no key. For each batch of
-questions it spawns a Haiku 5.5 subagent (`model`), gives it the same state and
+questions it spawns a Haiku subagent (`model`, the alias `haiku`), gives it the same state and
 questions, and reads back one probability per question from its JSON reply
 (its `turn.complete` answer). A malformed or missing answer falls back to the
 built-in summary.

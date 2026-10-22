@@ -49,8 +49,8 @@
     "model": {
       "type": "string",
       "title": "Scoring model",
-      "description": "Model of the subagent that scores which tool calls and results to keep.",
-      "default": "claude-haiku-5-5"
+      "description": "Model alias of the subagent (haiku, sonnet, opus or fable) that scores which tool calls and results to keep.",
+      "default": "haiku"
     }
   }
 }
