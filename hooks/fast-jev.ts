@@ -283,6 +283,9 @@ export const register: Register = (on: On, options: PluginOptions) => {
   // The subagent's finish is delivered to the main model as a task notification;
   // it carries nothing the model should act on, so keep it out of the chat.
   on('prompt.submit', async ($, event, next) => {
+    if (event.origin.kind !== 'composer') {
+      $.ui.log(`prompt.submit ${event.origin.kind}: ${JSON.stringify(event.text.slice(0, 200))}`);
+    }
     if (
       event.origin.kind === 'task-notification' &&
       ([...scorers].some((id) => event.text.includes(id)) || event.text.includes(SCORER_DESCRIPTION))
