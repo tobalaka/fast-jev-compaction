@@ -23,8 +23,6 @@ import type {
   ToolUse,
 } from '../src/types.js';
 
-const SCORER_DESCRIPTION = 'Score compaction questions';
-
 const HOOK_DEFAULTS = {
   compactAtPercent: 60,
   minReductionRatio: 0.25,
@@ -241,7 +239,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
         const { agentId, deny } = await $.agent.spawn({
           prompt,
           model,
-          description: SCORER_DESCRIPTION,
+          description: 'Score compaction questions',
         });
         if (deny !== undefined || !agentId) throw new Error(`subagent refused: ${deny ?? 'no id'}`);
         scorers.add(agentId);
@@ -280,15 +278,14 @@ export const register: Register = (on: On, options: PluginOptions) => {
     }
   });
 
-  // The subagent's finish is delivered to the main model as a task notification;
-  // it carries nothing the model should act on, so keep it out of the chat.
+  // The scorer's final report is handed back to the main model as a peer
+  // message (`<agent-message from="<agentId>">`); it is data for this hook
+  // alone, so keep it out of the chat.
   on('prompt.submit', async ($, event, next) => {
-    if (event.origin.kind !== 'composer') {
-      $.ui.log(`prompt.submit ${event.origin.kind}: ${JSON.stringify(event.text.slice(0, 200))}`);
-    }
+    const kind = event.origin.kind;
     if (
-      event.origin.kind === 'task-notification' &&
-      ([...scorers].some((id) => event.text.includes(id)) || event.text.includes(SCORER_DESCRIPTION))
+      (kind === 'peer' || kind === 'task-notification') &&
+      [...scorers].some((id) => event.text.includes(`from="${id}"`) || event.text.includes(id))
     ) {
       return { drop: 'compaction scorer finished' };
     }
