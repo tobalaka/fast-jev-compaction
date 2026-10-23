@@ -23,6 +23,8 @@ import type {
   ToolUse,
 } from '../src/types.js';
 
+const SCORER_DESCRIPTION = 'Score compaction questions';
+
 const HOOK_DEFAULTS = {
   compactAtPercent: 60,
   minReductionRatio: 0.25,
@@ -229,6 +231,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
   const waiting = new Map<string, (answer: string) => void>();
   const failures = new Map<string, (error: Error) => void>();
   let scoring = false;
+  const scorers = new Set<string>();
 
   on('session.compact', async ($, event, next) => {
     scoring = true;
@@ -238,9 +241,10 @@ export const register: Register = (on: On, options: PluginOptions) => {
         const { agentId, deny } = await $.agent.spawn({
           prompt,
           model,
-          description: 'Score compaction questions',
+          description: SCORER_DESCRIPTION,
         });
         if (deny !== undefined || !agentId) throw new Error(`subagent refused: ${deny ?? 'no id'}`);
+        scorers.add(agentId);
         const early = answers.get(agentId);
         if (early !== undefined) {
           answers.delete(agentId);
@@ -274,6 +278,18 @@ export const register: Register = (on: On, options: PluginOptions) => {
       scoring = false;
       answers.clear();
     }
+  });
+
+  // The subagent's finish is delivered to the main model as a task notification;
+  // it carries nothing the model should act on, so keep it out of the chat.
+  on('prompt.submit', async ($, event, next) => {
+    if (
+      event.origin.kind === 'task-notification' &&
+      ([...scorers].some((id) => event.text.includes(id)) || event.text.includes(SCORER_DESCRIPTION))
+    ) {
+      return { drop: 'compaction scorer finished' };
+    }
+    return next(event);
   });
 
   on('turn.complete', async ($, event: TurnCompleteInput, next) => {
